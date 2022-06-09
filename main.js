@@ -4,6 +4,23 @@ mongoose.connect('mongodb://localhost:27017/lobo-shop');
 const express = require('express');
 const app = express();
 
+//引入express-session
+const session = require("express-session");
+//配置
+app.use(session({
+    secret: 'lobo-shop-session-secret-887910',
+    name: 'lobo-shop-session-cookie', //客户端中看到的cookie的名称
+    resave: false,  //强制保存session，即使它没发生变化
+    saveUninitialized: true,  //强制存储未初始化的session
+    cookie: {
+        maxAge: 1000 * 60 * 30, //1s * 60 *30
+        secure: false //只有https才发送cookie
+        //domain: '127.0.0.1:8080'
+    },
+    rolling: true  //每次请求都会重置cookie的有效时间
+}));
+
+
 const bodyParser = require('body-parser');
 app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
@@ -138,18 +155,18 @@ let multer = require('multer');
 //配置
 let storage = multer.diskStorage({
     //存储地址
-    destination: function(req, file, cb){
+    destination: function (req, file, cb) {
         cb(null, 'public/upload/')
     },
     //文件名字
-    filename: function(req, file, cb){
+    filename: function (req, file, cb) {
         //获取文件扩展名
         let fileFormat = (file.originalname).split(".");
         cb(null, Date.now() + "." + fileFormat[fileFormat.length - 1]);
     }
 })
 //实例化
-let upload = multer({storage: storage})
+let upload = multer({ storage: storage })
 
 const homeSwiperSchema = mongoose.Schema({
     picUrl: String
@@ -163,15 +180,88 @@ app.get('/v1/homeSwiper', async (req, res) => {
 })
 
 app.post('/v1/homeSwiper', upload.single('file'), async (req, res) => {
-    let swiper = new homeSwiperModel({picUrl: host + '/' + req.file.filename});
+    let swiper = new homeSwiperModel({ picUrl: host + '/' + req.file.filename });
     let msg = await swiper.save();
     res.json(msg);
 })
 
 app.delete('/v1/homeSwiper', async (req, res) => {
-    let msg = await homeSwiperModel.findOneAndDelete({name: req.body.name});
+    let msg = await homeSwiperModel.findOneAndDelete({ name: req.body.name });
     res.json(msg);
 })
+
+
+//用户数据库处理
+const userSchema = mongoose.Schema({
+    phone: String,
+    account: String,
+    password: String
+})
+
+const userModel = mongoose.model('User', userSchema, 'user');
+
+//验证码功能
+
+//引入
+const svgCaptcha = require('svg-captcha');
+
+//发送验证码
+app.get('/v1/register-verify', (req, res) => {
+    let captcha = svgCaptcha.create();
+    req.session.captcha = captcha.text;
+
+    res.type('svg');
+    res.status(200).send(captcha.data);
+})
+
+//验证验证码
+app.post('/v1/register-verify', (req, res) => {
+
+    if (req.body.verifyCode == req.session.captcha) {
+        userModel.find({ phone: req.phone }, (err, data) => {
+            if (data.length != 0) {
+                res.status(200).json({
+                    code: 201,
+                    msg: '手机已注册!'
+                })
+            } else {
+                res.status(200).json({
+                    code: 200,
+                    msg: '该手机号可注册!'
+                })
+            }
+        });
+
+    } else {
+        res.status(200).json({
+            code: 201,
+            msg: '验证码错误'
+        })
+    }
+})
+
+app.post('/v1/register', (req, res) => {
+    userModel.find({ account: req.account }, async (err, data) => {
+        if (data.length != 0) {
+            res.status(200).json({
+                code: 201,
+                msg: '该用户名已存在!'
+            })
+        } else {
+            let user = new userModel({
+                phone: req.body.phone,
+                account: req.body.account,
+                password: req.body.password
+            });
+            await user.save();
+            res.status(200).send({
+                code: 200,
+                msg: '注册成功!'
+            })
+        }
+    });
+})
+
 
 app.listen(8088);
 console.log('服务器已启动，正在监听8088端口。')
