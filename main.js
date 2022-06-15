@@ -4,6 +4,8 @@ mongoose.connect('mongodb://localhost:27017/lobo-shop');
 const express = require('express');
 const app = express();
 
+const fs = require('fs');
+
 //引入express-session
 const session = require("express-session");
 //配置
@@ -26,7 +28,8 @@ app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
 app.use(express.static('public'));
-app.use(express.static('public/upload'));
+app.use(express.static('public/homeswiper'));
+app.use(express.static('public/spuswiper'));
 
 const host = 'http://127.0.0.1:8088';
 
@@ -153,10 +156,10 @@ app.delete('/v1/category_3', async (req, res) => {
 //引入图片上传中间件
 let multer = require('multer');
 //配置
-let storage = multer.diskStorage({
+let storage_homeswiper = multer.diskStorage({
     //存储地址
     destination: function (req, file, cb) {
-        cb(null, 'public/upload/')
+        cb(null, 'public/homeswiper/')
     },
     //文件名字
     filename: function (req, file, cb) {
@@ -166,27 +169,31 @@ let storage = multer.diskStorage({
     }
 })
 //实例化
-let upload = multer({ storage: storage })
+let upload_homeswiper = multer({ storage: storage_homeswiper })
 
-const homeSwiperSchema = mongoose.Schema({
-    picUrl: String
+const homeswiperSchema = mongoose.Schema({
+    name: String,
+    url: String
 })
 
-const homeSwiperModel = mongoose.model('HomeSwiper', homeSwiperSchema, 'homeSwiper');
+const homeswiperModel = mongoose.model('Homeswiper', homeswiperSchema, 'homeswiper');
 
 app.get('/v1/homeSwiper', async (req, res) => {
-    let result = await homeSwiperModel.find({});
+    let result = await homeswiperModel.find({});
     res.json(result);
 })
 
-app.post('/v1/homeSwiper', upload.single('file'), async (req, res) => {
-    let swiper = new homeSwiperModel({ picUrl: host + '/' + req.file.filename });
+app.post('/v1/homeSwiper', upload_homeswiper.single('file'), async (req, res) => {
+    let swiper = new homeswiperModel({
+        name: req.file.filename,
+        url: host + '/' + req.file.filename
+    });
     let msg = await swiper.save();
     res.json(msg);
 })
 
 app.delete('/v1/homeSwiper', async (req, res) => {
-    let msg = await homeSwiperModel.findOneAndDelete({ name: req.body.name });
+    let msg = await homeswiperModel.findOneAndDelete({ name: req.body.name });
     res.json(msg);
 })
 
@@ -262,6 +269,272 @@ app.post('/v1/register', (req, res) => {
     });
 })
 
+//登陆功能
+
+//引入token包
+const jwt = require('jsonwebtoken');
+const e = require('express');
+
+app.post('/v1/login', (req, res) => {
+    userModel.find({ account: req.body.account }, (err, data) => {
+        if (data.length != 0) {
+            if (data[0].password === req.body.password) {
+                let token = jwt.sign({ account: req.body.account }, 'lobo-shop', {
+                    //过期时间60s
+                    expiresIn: 300
+                });
+
+                res.send({
+                    code: 200,
+                    msg: '登陆成功',
+                    token
+                });
+            } else {
+                res.send({
+                    code: 201,
+                    msg: '账号或密码错误'
+                });
+            }
+        } else {
+            res.send({
+                code: 201,
+                msg: '账号或密码错误'
+            });
+        }
+    })
+})
+
+//获取用户信息
+app.get('/v1/userInfo', (req, res) => {
+    jwt.verify(req.headers.token, 'lobo-shop', (err, decode) => {
+        if (err) {
+            res.send({
+                code: 201,
+                msg: '登陆已过期，请重新登陆'
+            });
+        } else {
+            userModel.aggregate([
+                {
+                    $match: { "account": decode.account }
+                },
+                {
+                    $project: { "account": 1, "_id": 0 }
+                }
+            ], (err, data) => {
+                if (err) {
+                    res.send({
+                        code: 201,
+                        msg: err.message
+                    });
+                } else {
+                    res.send({
+                        code: 200,
+                        msg: '获取个人信息成功',
+                        data: data[0]
+                    });
+                }
+            })
+        }
+    });
+})
+
+//SKU数据
+const skuSchema = mongoose.Schema({
+    description: String,
+    c1_id: String,
+    c2_id: String,
+    c3_id: String,
+    attrList: Array
+})
+
+const skuModel = mongoose.model('Sku', skuSchema, 'sku');
+
+app.get('/v1/sku', async (req, res) => {
+    skuModel.aggregate([
+        {
+            $lookup: {
+                from: 'spu',
+                localField: '_id',
+                foreignField: 'sku_id',
+                as: 'spuList'
+            }
+        }
+    ], (err, data) => {
+        if (err) {
+            res.status(200).send({
+                code: 201,
+                msg: '查询sku失败'
+            })
+        } else {
+            res.status(200).send({
+                code: 200,
+                msg: '查询sku成功',
+                data
+            })
+        }
+    })
+})
+
+app.post('/v1/sku', async (req, res) => {
+    if (req.body._id) {
+        //更新
+        skuModel.findByIdAndUpdate({ '_id': req.body._id }, req.body, (err, result) => {
+            if (err) {
+                res.status(200).send({
+                    code: 201,
+                    msg: '更新sku失败'
+                })
+            } else {
+                res.status(200).send({
+                    code: 200,
+                    msg: '更新sku成功'
+                })
+            }
+        });
+    } else {
+        //新增
+        let sku = new skuModel({
+            ...req.body
+        });
+
+        await sku.save();
+
+        res.status(200).send({
+            code: 200,
+            msg: '添加sku成功'
+        })
+    }
+})
+
+app.delete('/v1/sku', async (req, res) => {
+    skuModel.findByIdAndDelete({ '_id': req.body._id }, (err, result) => {
+        if (err) {
+            res.status(200).send({
+                code: 201,
+                msg: '删除sku失败'
+            })
+        } else {
+            res.status(200).send({
+                code: 200,
+                msg: '删除sku成功'
+            })
+        }
+    })
+})
+
+//SPU图片
+
+//配置
+let storage_spuswiper = multer.diskStorage({
+    //存储地址
+    destination: function (req, file, cb) {
+        cb(null, 'public/spuswiper/')
+    },
+    //文件名字
+    filename: function (req, file, cb) {
+        //获取文件扩展名
+        let fileFormat = (file.originalname).split(".");
+        cb(null, Date.now() + "." + fileFormat[fileFormat.length - 1]);
+    }
+})
+//实例化
+let upload_spuswiper = multer({ storage: storage_spuswiper })
+
+const spuswiperSchema = mongoose.Schema({
+    name: String,
+    url: String
+})
+
+const spuswiperModel = mongoose.model('Spuswiper', spuswiperSchema, 'spuswiper');
+
+//SPU数据
+const spuSchema = mongoose.Schema({
+    sku_id: mongoose.Types.ObjectId,
+    longDescription: String,
+    shortDescription: String,
+    weight: Number,
+    swipers: Array,
+    attrList: Array
+})
+
+const spuModel = mongoose.model('Spu', spuSchema, 'spu');
+
+
+app.post('/v1/spu', async (req, res) => {
+    if (req.body._id) {
+        //更新
+        spuModel.findByIdAndUpdate({ '_id': req.body._id }, req.body, (err, result) => {
+            if (err) {
+                res.status(200).send({
+                    code: 201,
+                    msg: '更新spu失败'
+                })
+            } else {
+                res.status(200).send({
+                    code: 200,
+                    msg: '更新spu成功'
+                })
+            }
+        })
+    } else {
+        //新增
+        let spu = new spuModel({
+            ...req.body
+        });
+
+        await spu.save();
+
+        res.status(200).send({
+            code: 200,
+            msg: '添加spu成功'
+        })
+    }
+})
+
+app.delete('/v1/spu', async (req, res) => {
+    spuModel.findByIdAndDelete({ '_id': req.body._id }, (err, result) => {
+        if (err) {
+            res.status(200).send({
+                code: 201,
+                msg: '删除spu失败'
+            })
+        } else {
+            res.status(200).send({
+                code: 200,
+                msg: '删除spu成功'
+            })
+        }
+    })
+})
+
+//SPU图片上传
+app.post('/v1/spuSwiper', upload_spuswiper.single('file'), async (req, res) => {
+    console.log(req.file.filename);
+    let swiper = new spuswiperModel({
+        name: req.file.filename,
+        url: host + '/' + req.file.filename
+    });
+    let msg = await swiper.save();
+    res.json(msg);
+})
+
+app.delete('/v1/spuSwiper', async (req, res) => {
+    fs.unlink('public/spuswiper/' + req.body.filename, err => {
+        if (err) {
+            res.status(200).send({
+                code: 201,
+                msg: '删除spu图片失败'
+            })
+        } else {
+            res.status(200).send({
+                code: 200,
+                msg: '删除spu图片成功'
+            })
+        }
+    });
+})
+
+//搜索功能
 
 app.listen(8088);
 console.log('服务器已启动，正在监听8088端口。')
