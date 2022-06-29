@@ -56,27 +56,45 @@ const c1Model = mongoose.model('Category_1', c1Schema, 'category_1');
 
 //获取所有分类
 app.get('/v1/categorys', async (req, res) => {
-    let result = await c1Model.aggregate([
-        {
-            $lookup: {
-                from: "category_2",
-                localField: "_id",
-                foreignField: "c1_id",
-                as: 'children',
-                pipeline: [
-                    {
-                        $lookup: {
-                            from: "category_3",
-                            localField: "_id",
-                            foreignField: "c2_id",
-                            as: 'children'
-                        }
+    let aggregateOption = [];
+
+    aggregateOption.push({
+        $lookup: {
+            from: "category_2",
+            localField: "_id",
+            foreignField: "c1_id",
+            as: 'children',
+            pipeline: [
+                {
+                    $lookup: {
+                        from: "category_3",
+                        localField: "_id",
+                        foreignField: "c2_id",
+                        as: 'children'
                     }
-                ]
-            }
+                }
+            ]
         }
-    ])
-    res.json(result);
+    })
+
+    if (req.query.currentPage && req.query.pageSize) {
+        aggregateOption.push({
+            $skip: (req.query.currentPage - 1) * req.query.pageSize
+        });
+
+        aggregateOption.push({
+            $limit: Number(req.query.pageSize)
+        });
+    }
+
+    let result = await c1Model.aggregate(aggregateOption);
+    c1Model.count({}, (err, count) => {
+        res.json({
+            categorys: result,
+            count
+        });
+    });
+
 })
 
 app.post('/v1/category_1', async (req, res) => {
@@ -225,7 +243,7 @@ app.get('/v1/register-verify', (req, res) => {
 app.post('/v1/register-verify', (req, res) => {
 
     if (req.body.verifyCode == req.session.captcha) {
-        userModel.find({ phone: req.phone }, (err, data) => {
+        userModel.find({ phone: req.body.phone }, (err, data) => {
             if (data.length != 0) {
                 res.status(200).json({
                     code: 201,
@@ -247,8 +265,10 @@ app.post('/v1/register-verify', (req, res) => {
     }
 })
 
+//注册账号
 app.post('/v1/register', (req, res) => {
-    userModel.find({ account: req.account }, async (err, data) => {
+    userModel.find({ account: req.body.account }, async (err, data) => {
+        console.log(data);
         if (data.length != 0) {
             res.status(200).json({
                 code: 201,
@@ -279,9 +299,9 @@ app.post('/v1/login', (req, res) => {
     userModel.find({ account: req.body.account }, (err, data) => {
         if (data.length != 0) {
             if (data[0].password === req.body.password) {
-                let token = jwt.sign({ account: req.body.account }, 'lobo-shop', {
-                    //过期时间60s
-                    expiresIn: 300
+                let token = jwt.sign({ account: req.body.account, user_id: data[0]._id }, 'lobo-shop', {
+                    //过期时间600s
+                    expiresIn: 60
                 });
 
                 res.send({
@@ -318,7 +338,7 @@ app.get('/v1/userInfo', (req, res) => {
                     $match: { "account": decode.account }
                 },
                 {
-                    $project: { "account": 1, "_id": 0 }
+                    $project: { "account": 1, "_id": 1 }
                 }
             ], (err, data) => {
                 if (err) {
@@ -341,35 +361,67 @@ app.get('/v1/userInfo', (req, res) => {
 //SKU数据
 const skuSchema = mongoose.Schema({
     description: String,
-    c1_id: String,
-    c2_id: String,
-    c3_id: String,
+    c1_id: mongoose.Types.ObjectId,
+    c2_id: mongoose.Types.ObjectId,
+    c3_id: mongoose.Types.ObjectId,
     attrList: Array
 })
 
 const skuModel = mongoose.model('Sku', skuSchema, 'sku');
 
 app.get('/v1/sku', async (req, res) => {
-    skuModel.aggregate([
-        {
-            $lookup: {
-                from: 'spu',
-                localField: '_id',
-                foreignField: 'sku_id',
-                as: 'spuList'
+    let aggregateOption = [];
+    let result = {};
+
+    if (req.query.sku_id) {
+        aggregateOption.push({
+            $match: {
+                '_id': mongoose.Types.ObjectId(req.query.sku_id)
             }
+        });
+    }
+
+    //关联spu
+    aggregateOption.push({
+        $lookup: {
+            from: 'spu',
+            localField: '_id',
+            foreignField: 'sku_id',
+            as: 'spuList'
         }
-    ], (err, data) => {
+    });
+
+    if (req.query.pageSize && req.query.currentPage) {
+        aggregateOption.push({
+            $skip: (req.query.currentPage - 1) * req.query.pageSize
+        });
+
+        aggregateOption.push({
+            $limit: Number(req.query.pageSize)
+        });
+
+        let count = await skuModel.count();
+        result.count = count;
+    }
+
+
+
+    skuModel.aggregate(aggregateOption, (err, data) => {
         if (err) {
             res.status(200).send({
                 code: 201,
-                msg: '查询sku失败'
+                msg: err.message
             })
         } else {
+            if (result.count) {
+                result.skuList = data;
+            } else {
+                result = data;
+            }
             res.status(200).send({
                 code: 200,
                 msg: '查询sku成功',
-                data
+                data: result
             })
         }
     })
@@ -452,12 +504,39 @@ const spuSchema = mongoose.Schema({
     sku_id: mongoose.Types.ObjectId,
     longDescription: String,
     shortDescription: String,
+    price: Number,
     weight: Number,
     swipers: Array,
     attrList: Array
 })
 
 const spuModel = mongoose.model('Spu', spuSchema, 'spu');
+
+app.get('/v1/spu', async (req, res) => {
+    let aggregateOption = [];
+    if (req.query._id) {
+        aggregateOption.push({
+            $match: {
+                '_id': mongoose.Types.ObjectId(req.query._id)
+            }
+        });
+    }
+
+    spuModel.aggregate(aggregateOption, (err, data) => {
+        if (err) {
+            res.status(200).send({
+                code: 201,
+                msg: '查询spu失败'
+            })
+        } else {
+            res.status(200).send({
+                code: 200,
+                msg: '查询spu成功',
+                data
+            })
+        }
+    })
+})
 
 
 app.post('/v1/spu', async (req, res) => {
@@ -509,7 +588,6 @@ app.delete('/v1/spu', async (req, res) => {
 
 //SPU图片上传
 app.post('/v1/spuSwiper', upload_spuswiper.single('file'), async (req, res) => {
-    console.log(req.file.filename);
     let swiper = new spuswiperModel({
         name: req.file.filename,
         url: host + '/' + req.file.filename
@@ -519,11 +597,11 @@ app.post('/v1/spuSwiper', upload_spuswiper.single('file'), async (req, res) => {
 })
 
 app.delete('/v1/spuSwiper', async (req, res) => {
-    fs.unlink('public/spuswiper/' + req.body.filename, err => {
+    fs.unlink('public/spuswiper/' + req.body.name, err => {
         if (err) {
             res.status(200).send({
                 code: 201,
-                msg: '删除spu图片失败'
+                msg: err
             })
         } else {
             res.status(200).send({
@@ -535,6 +613,375 @@ app.delete('/v1/spuSwiper', async (req, res) => {
 })
 
 //搜索功能
+app.get('/v1/search', async (req, res) => {
+    let query = req.query;
+
+    let keyword = query.keyword;
+    delete query.keyword;
+
+    let pageSize = req.query.pageSize;
+    let currentPage = req.query.currentPage;
+    delete query.pageSize;
+    delete query.currentPage;
+
+    let attrList = Object.keys(query).map(key => ({
+        'attrName': key,
+        'attrValue': query[key]
+    }));
+
+    let keywordReg = new RegExp(keyword);
+
+    let aggregateOptions = [
+        //查询c1名称
+        {
+            $lookup:
+            {
+                from: "category_1",
+                localField: "c1_id",
+                foreignField: "_id",
+                as: "c1"
+            }
+        },
+        //查询c2名称
+        {
+            $lookup:
+            {
+                from: "category_2",
+                localField: "c2_id",
+                foreignField: "_id",
+                as: "c2"
+            }
+        },
+        //查询c3名称
+        {
+            $lookup:
+            {
+                from: "category_3",
+                localField: "c3_id",
+                foreignField: "_id",
+                as: "c3"
+            }
+        },
+        //匹配sku描述、c1name、c2name、c3name是否有关键词
+        {
+            $match: {
+                $or: [
+                    { description: keywordReg },
+                    { 'c1.c1names': { "$in": [keywordReg] } },
+                    { "c2.c2name": keywordReg },
+                    { "c3.c3name": keywordReg }
+                ]
+            }
+        },
+        //查询相关spu
+        {
+            $lookup:
+            {
+                from: "spu",
+                localField: "_id",
+                foreignField: "sku_id",
+                as: "spus"
+            }
+        },
+        //压平spus数组
+        {
+            $unwind: '$spus'
+        },
+        //用spu信息作为根
+        {
+            $replaceRoot: {
+                newRoot: "$spus"
+            }
+        },
+        //搜索sku
+        {
+            $lookup:
+            {
+                from: "sku",
+                localField: "sku_id",
+                foreignField: "_id",
+                as: "skuInfo"
+            }
+        },
+        //压平skuInfo
+        {
+            $unwind: '$skuInfo'
+        }
+    ];
+
+    if (attrList.length != 0) {
+        aggregateOptions.push(
+            //属性搜索
+            {
+                $match: {
+                    'attrList': {
+                        $all: attrList
+                    }
+                }
+            })
+    }
+
+
+    let count = -1;
+    if (pageSize && currentPage) {
+        count = await skuModel.aggregate([...aggregateOptions, { $count: 'count' }]);
+
+        aggregateOptions.push({
+            $skip: (currentPage - 1) * pageSize
+        });
+
+        aggregateOptions.push({
+            $limit: Number(pageSize)
+        });
+    }
+
+    await skuModel.aggregate(aggregateOptions, (err, data) => {
+        if (err) {
+            res.status(200).send({
+                code: 201,
+                msg: '查询失败'
+            })
+        } else {
+            let result = {};
+            if (count !== -1) {
+                result.count = count;
+                result.spuList = data;
+            } else {
+                result = data;
+            }
+            res.status(200).send({
+                code: 200,
+                msg: '查询成功',
+                data: result
+            })
+        }
+    });
+
+
+})
+
+//购物车
+const cartSchema = mongoose.Schema({
+    user_id: mongoose.Types.ObjectId,
+    goodsList: {
+        type: [{
+            count: Number,
+            spu_id: mongoose.Types.ObjectId
+        }]
+    }
+})
+
+const cartModel = mongoose.model('Cart', cartSchema, 'cart');
+
+app.get('/v1/cart', (req, res) => {
+    jwt.verify(req.headers.token, 'lobo-shop', (err, decode) => {
+        if (err) {
+            res.send({
+                code: 201,
+                msg: '登陆已过期，请重新登陆'
+            });
+        } else {
+            userModel.aggregate([
+                {
+                    $match: { "account": decode.account }
+                },
+                {
+                    $lookup: {
+                        from: "cart",
+                        localField: "_id",
+                        foreignField: "user_id",
+                        as: "cartInfo"
+                    }
+                },
+                {
+                    $project: { "cartInfo": 1 }
+                },
+                {
+                    $unwind: "$cartInfo"
+                },
+                {
+                    $unwind: "$cartInfo.goodsList"
+                },
+                {
+                    $replaceRoot: {
+                        newRoot: "$cartInfo.goodsList"
+                    }
+                },
+                {
+                    $lookup: {
+                        from: "spu",
+                        localField: "spu_id",
+                        foreignField: "_id",
+                        as: "spuInfo"
+                    }
+                },
+                {
+                    $unwind: "$spuInfo"
+                },
+                {
+                    $project: {
+                        "count": 1,
+                        "spuInfo": 1,
+                        "_id": 0
+                    }
+                },
+                {
+                    $lookup: {
+                        from: "sku",
+                        localField: "spuInfo.sku_id",
+                        foreignField: "_id",
+                        as: "skuInfo"
+                    }
+                },
+                {
+                    $unwind: "$skuInfo"
+                }
+            ], (err, data) => {
+                if (err) {
+                    res.send({
+                        code: 201,
+                        msg: err.message
+                    });
+                } else {
+                    res.send({
+                        code: 200,
+                        msg: '获取购物车信息成功',
+                        data
+                    });
+                }
+            })
+        }
+    });
+})
+
+app.post('/v1/cart', (req, res) => {
+    jwt.verify(req.headers.token, 'lobo-shop', async (err, decode) => {
+        if (err) {
+            res.send({
+                code: 201,
+                msg: '登陆已过期，请重新登陆'
+            });
+        } else {
+            cartModel.findOneAndUpdate({ user_id: mongoose.Types.ObjectId(req.body.user_id) }, req.body, { 'upsert': true }, (err, result) => {
+                if (err) {
+                    res.send({
+                        code: 201,
+                        msg: err
+                    })
+                } else {
+                    res.send({
+                        code: 200,
+                        msg: '更新购物车成功'
+                    })
+                }
+            });
+
+        }
+    });
+})
+
+//订单
+const billSchema = mongoose.Schema({
+    user_id: mongoose.Types.ObjectId,
+    finishTime: String,
+    spuList: [{
+        buyNum: Number,
+        spu_id: mongoose.Types.ObjectId
+    }]
+})
+
+const billModel = mongoose.model('Bill', billSchema, 'bill');
+
+app.get('/v1/bill', (req, res) => {
+    jwt.verify(req.headers.token, 'lobo-shop', async (err, decode) => {
+        if (err) {
+            res.send({
+                code: 201,
+                msg: '登陆已过期，请重新登陆'
+            });
+        } else {
+            let aggregateOption = [
+                {
+                    $match: {
+                        "user_id": mongoose.Types.ObjectId(decode.user_id)
+                    }
+                },
+                {
+                    $lookup: {
+                        from: "spu",
+                        localField: "spuList.spu_id",
+                        foreignField: "_id",
+                        as: "spuInfo",
+                        pipeline: [
+                            {
+                                $lookup: {
+                                    from: "sku",
+                                    localField: "sku_id",
+                                    foreignField: "_id",
+                                    as: 'skuInfo'
+                                }
+                            },
+                            {
+                                $unwind: '$skuInfo'
+                            }
+                        ]
+                    }
+                }
+            ];
+
+            let count = -1;
+
+            //分页器
+            if (req.query.pageSize && req.query.currentPage) {
+                count = await billModel.aggregate([...aggregateOption, {$count: 'count'}]);
+
+                aggregateOption.push({
+                    $skip: (req.query.currentPage - 1) * req.query.pageSize
+                });
+
+                aggregateOption.push({
+                    $limit: Number(req.query.pageSize)
+                });
+            }
+
+            billModel.aggregate(aggregateOption, (err, data) => {
+                if (err) {
+                    res.send({
+                        code: 201,
+                        msg: err.message
+                    });
+                } else {
+                    let result = {};
+                    if(count !== -1) {
+                        result.count = count[0]?.count ?? 0;
+                        result.billList = data;
+                    }else{
+                        result = data;
+                    }
+                    res.send({
+                        code: 200,
+                        msg: '获取订单信息成功',
+                        data: result
+                    });
+                }
+            })
+        }
+    });
+})
+
+app.post('/v1/bill', (req, res) => {
+    jwt.verify(req.headers.token, 'lobo-shop', async (err, decode) => {
+        if (err) {
+            res.send({
+                code: 201,
+                msg: '登陆已过期，请重新登陆'
+            });
+        } else {
+            let bill = new billModel({ ...req.body });
+            bill.save();
+        }
+    });
+})
 
 app.listen(8088);
 console.log('服务器已启动，正在监听8088端口。')
