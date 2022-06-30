@@ -31,7 +31,7 @@ app.use(express.static('public'));
 app.use(express.static('public/homeswiper'));
 app.use(express.static('public/spuswiper'));
 
-const host = 'http://127.0.0.1:8088';
+const host = 'http://45.45.177.71:8088';
 
 //解决跨域
 app.all('*', (req, res, next) => {
