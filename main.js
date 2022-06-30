@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-mongoose.connect('mongodb://localhost:27017/lobo-shop');
+mongoose.connect('mongodb://admin:qweasd887910@localhost:27017/lobo-shop');
 
 const express = require('express');
 const app = express();
@@ -33,7 +33,7 @@ app.use(express.static('public/console'));
 app.use(express.static('public/homeswiper'));
 app.use(express.static('public/spuswiper'));
 
-const host = 'http://127.0.0.1:8088';
+const host = 'http://45.45.177.71:8088';
 
 //解决跨域
 app.all('*', (req, res, next) => {
