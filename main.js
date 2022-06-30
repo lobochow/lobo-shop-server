@@ -1,5 +1,5 @@
 const mongoose = require('mongoose');
-mongoose.connect('mongodb://admin:qweasd887910@localhost:27017/lobo-shop');
+mongoose.connect('mongodb://localhost:27017/lobo-shop');
 
 const express = require('express');
 const app = express();
@@ -28,10 +28,12 @@ app.use(bodyParser.urlencoded({ extended: false }));
 app.use(bodyParser.json());
 
 app.use(express.static('public'));
+app.use(express.static('public/front'));
+app.use(express.static('public/console'));
 app.use(express.static('public/homeswiper'));
 app.use(express.static('public/spuswiper'));
 
-const host = 'http://45.45.177.71:8088';
+const host = 'http://127.0.0.1:8088';
 
 //解决跨域
 app.all('*', (req, res, next) => {
@@ -268,7 +270,6 @@ app.post('/v1/register-verify', (req, res) => {
 //注册账号
 app.post('/v1/register', (req, res) => {
     userModel.find({ account: req.body.account }, async (err, data) => {
-        console.log(data);
         if (data.length != 0) {
             res.status(200).json({
                 code: 201,
@@ -297,11 +298,12 @@ const e = require('express');
 
 app.post('/v1/login', (req, res) => {
     userModel.find({ account: req.body.account }, (err, data) => {
-        if (data.length != 0) {
+        //找不到是data为undefined
+        if (data && data.length != 0) {
             if (data[0].password === req.body.password) {
                 let token = jwt.sign({ account: req.body.account, user_id: data[0]._id }, 'lobo-shop', {
                     //过期时间600s
-                    expiresIn: 60
+                    expiresIn: 300
                 });
 
                 res.send({
@@ -329,7 +331,7 @@ app.get('/v1/userInfo', (req, res) => {
     jwt.verify(req.headers.token, 'lobo-shop', (err, decode) => {
         if (err) {
             res.send({
-                code: 201,
+                code: 202,
                 msg: '登陆已过期，请重新登陆'
             });
         } else {
@@ -777,7 +779,7 @@ app.get('/v1/cart', (req, res) => {
     jwt.verify(req.headers.token, 'lobo-shop', (err, decode) => {
         if (err) {
             res.send({
-                code: 201,
+                code: 202,
                 msg: '登陆已过期，请重新登陆'
             });
         } else {
@@ -858,7 +860,7 @@ app.post('/v1/cart', (req, res) => {
     jwt.verify(req.headers.token, 'lobo-shop', async (err, decode) => {
         if (err) {
             res.send({
-                code: 201,
+                code: 202,
                 msg: '登陆已过期，请重新登陆'
             });
         } else {
@@ -896,7 +898,7 @@ app.get('/v1/bill', (req, res) => {
     jwt.verify(req.headers.token, 'lobo-shop', async (err, decode) => {
         if (err) {
             res.send({
-                code: 201,
+                code: 202,
                 msg: '登陆已过期，请重新登陆'
             });
         } else {
@@ -973,7 +975,7 @@ app.post('/v1/bill', (req, res) => {
     jwt.verify(req.headers.token, 'lobo-shop', async (err, decode) => {
         if (err) {
             res.send({
-                code: 201,
+                code: 202,
                 msg: '登陆已过期，请重新登陆'
             });
         } else {
