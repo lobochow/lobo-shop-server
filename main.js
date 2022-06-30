@@ -331,7 +331,7 @@ app.get('/v1/userInfo', (req, res) => {
     jwt.verify(req.headers.token, 'lobo-shop', (err, decode) => {
         if (err) {
             res.send({
-                code: 202,
+                code: 201,
                 msg: '登陆已过期，请重新登陆'
             });
         } else {
@@ -779,7 +779,7 @@ app.get('/v1/cart', (req, res) => {
     jwt.verify(req.headers.token, 'lobo-shop', (err, decode) => {
         if (err) {
             res.send({
-                code: 202,
+                code: 201,
                 msg: '登陆已过期，请重新登陆'
             });
         } else {
@@ -860,7 +860,7 @@ app.post('/v1/cart', (req, res) => {
     jwt.verify(req.headers.token, 'lobo-shop', async (err, decode) => {
         if (err) {
             res.send({
-                code: 202,
+                code: 201,
                 msg: '登陆已过期，请重新登陆'
             });
         } else {
@@ -898,7 +898,7 @@ app.get('/v1/bill', (req, res) => {
     jwt.verify(req.headers.token, 'lobo-shop', async (err, decode) => {
         if (err) {
             res.send({
-                code: 202,
+                code: 201,
                 msg: '登陆已过期，请重新登陆'
             });
         } else {
@@ -975,7 +975,7 @@ app.post('/v1/bill', (req, res) => {
     jwt.verify(req.headers.token, 'lobo-shop', async (err, decode) => {
         if (err) {
             res.send({
-                code: 202,
+                code: 201,
                 msg: '登陆已过期，请重新登陆'
             });
         } else {
