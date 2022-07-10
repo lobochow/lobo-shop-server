@@ -869,7 +869,7 @@ app.post('/v1/cart', (req, res) => {
                 msg: '登陆已过期，请重新登陆'
             });
         } else {
-            cartModel.findOneAndUpdate({ user_id: mongoose.Types.ObjectId(decode.user_id) }, { user_id:decode.user_id, ...req.body}, { 'upsert': true }, (err, result) => {
+            cartModel.findOneAndUpdate({ user_id: mongoose.Types.ObjectId(decode.user_id) }, req.body, { 'upsert': true }, (err, result) => {
                 if (err) {
                     res.send({
                         code: 201,
@@ -1041,6 +1041,7 @@ app.post('/v1/bill', (req, res) => {
 app.post('/mircoApp/login', async (req, res) => {
 
     let openid = req.headers['x-wx-openid'];
+    console.log(openid)
 
     //注册用户
     userModel.find({ account: openid }, async (err, data) => {
@@ -1053,13 +1054,15 @@ app.post('/mircoApp/login', async (req, res) => {
             let data = await user.save();
             token = jwt.sign({ account: openid, user_id: data._id }, 'lobo-shop', {
                 //过期时间600s
-                expiresIn: 60
+                expiresIn: 600
             });
+            console.log('注册');
         } else {
             token = jwt.sign({ account: openid, user_id: data[0]._id }, 'lobo-shop', {
                 //过期时间600s
-                expiresIn: 60
+                expiresIn: 600
             });
+            console.log('登陆');
         }
 
         res.status(200).json(token);
