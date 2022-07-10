@@ -1,5 +1,6 @@
 const mongoose = require('mongoose');
 mongoose.connect('mongodb://admin:qweasd887910@45.45.177.71:27017/lobo-shop');
+//mongoose.connect('mongodb://localhost:27017/lobo-shop');
 
 const express = require('express');
 const app = express();
@@ -34,6 +35,7 @@ app.use(express.static('public/homeswiper'));
 app.use(express.static('public/spuswiper'));
 
 const host = 'http://45.45.177.71:8088';
+//const host = 'http://127.0.0.1:8088';
 
 //解决跨域
 app.all('*', (req, res, next) => {
@@ -222,7 +224,8 @@ app.delete('/v1/homeSwiper', async (req, res) => {
 const userSchema = mongoose.Schema({
     phone: String,
     account: String,
-    password: String
+    password: String,
+    userInfo: Object
 })
 
 const userModel = mongoose.model('User', userSchema, 'user');
@@ -295,7 +298,9 @@ app.post('/v1/register', (req, res) => {
 //引入token包
 const jwt = require('jsonwebtoken');
 const e = require('express');
+const { Axios, default: axios } = require('axios');
 
+//登陆
 app.post('/v1/login', (req, res) => {
     userModel.find({ account: req.body.account }, (err, data) => {
         //找不到是data为undefined
@@ -340,12 +345,12 @@ app.get('/v1/userInfo', (req, res) => {
                     $match: { "account": decode.account }
                 },
                 {
-                    $project: { "account": 1, "_id": 1 }
+                    $project: { "account": 1, "userInfo": 1, "_id": 1 }
                 }
             ], (err, data) => {
                 if (err) {
                     res.send({
-                        code: 201,
+                        code: 202,
                         msg: err.message
                     });
                 } else {
@@ -864,7 +869,7 @@ app.post('/v1/cart', (req, res) => {
                 msg: '登陆已过期，请重新登陆'
             });
         } else {
-            cartModel.findOneAndUpdate({ user_id: mongoose.Types.ObjectId(req.body.user_id) }, req.body, { 'upsert': true }, (err, result) => {
+            cartModel.findOneAndUpdate({ user_id: mongoose.Types.ObjectId(decode.user_id) }, { user_id:decode.user_id, ...req.body}, { 'upsert': true }, (err, result) => {
                 if (err) {
                     res.send({
                         code: 201,
@@ -935,7 +940,7 @@ app.get('/v1/bill', (req, res) => {
 
             //分页器
             if (req.query.pageSize && req.query.currentPage) {
-                count = await billModel.aggregate([...aggregateOption, {$count: 'count'}]);
+                count = await billModel.aggregate([...aggregateOption, { $count: 'count' }]);
 
                 aggregateOption.push({
                     $skip: (req.query.currentPage - 1) * req.query.pageSize
@@ -954,10 +959,10 @@ app.get('/v1/bill', (req, res) => {
                     });
                 } else {
                     let result = {};
-                    if(count !== -1) {
+                    if (count !== -1) {
                         result.count = count[0]?.count ?? 0;
                         result.billList = data;
-                    }else{
+                    } else {
                         result = data;
                     }
                     res.send({
@@ -982,6 +987,47 @@ app.post('/v1/bill', (req, res) => {
             let bill = new billModel({ ...req.body });
             bill.save();
         }
+    });
+})
+
+//微信小程序接口
+//注册兼登陆
+app.post('/mircoApp/login', async (req, res) => {
+    console.log('接受到登陆请求');
+    let { code: js_code, userInfo } = req.body;
+    let appid = 'wxf79b4bc85c8fca4b';
+    let secret = '60cff4738e73980e84ca69e49145f876';
+
+    let result = await axios({
+        url: `https://api.weixin.qq.com/sns/jscode2session?appid=${appid}&secret=${secret}&js_code=${js_code}&grant_type=authorization_code`,
+        method: 'GET'
+    });
+
+    console.log('兑换openid', result);
+
+    let { session_key, openid } = result.data;
+
+    //注册用户
+    userModel.find({ account: openid }, async (err, data) => {
+        let token = '';
+        if (data.length === 0) {
+            let user = new userModel({
+                account: openid,
+                userInfo
+            });
+            let data = await user.save();
+            token = jwt.sign({ account: openid, user_id: data._id }, 'lobo-shop', {
+                //过期时间600s
+                expiresIn: 60
+            });
+        } else {
+            token = jwt.sign({ account: openid, user_id: data[0]._id }, 'lobo-shop', {
+                //过期时间600s
+                expiresIn: 60
+            });
+        }
+
+        res.status(200).json(token);
     });
 })
 
