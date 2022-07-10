@@ -992,24 +992,55 @@ app.post('/v1/bill', (req, res) => {
 
 //微信小程序接口
 //注册兼登陆
+
+//非云托管版本
+// app.post('/mircoApp/login', async (req, res) => {
+    
+//     let { code: js_code, userInfo } = req.body;
+//     let appid = 'wxf79b4bc85c8fca4b';
+//     let secret = '60cff4738e73980e84ca69e49145f876';
+
+//     console.log(js_code);
+//     console.log(userInfo);
+
+//     let result = await axios({
+//         url: `https://api.weixin.qq.com/sns/jscode2session?appid=${appid}&secret=${secret}&js_code=${js_code}&grant_type=authorization_code`,
+//         method: 'GET'
+//     });
+
+    
+
+//     let { session_key, openid } = result.data;
+//     console.log('兑换openid', openid);
+
+//     //注册用户
+//     userModel.find({ account: openid }, async (err, data) => {
+//         let token = '';
+//         if (data.length === 0) {
+//             let user = new userModel({
+//                 account: openid,
+//                 userInfo
+//             });
+//             let data = await user.save();
+//             token = jwt.sign({ account: openid, user_id: data._id }, 'lobo-shop', {
+//                 //过期时间600s
+//                 expiresIn: 60
+//             });
+//         } else {
+//             token = jwt.sign({ account: openid, user_id: data[0]._id }, 'lobo-shop', {
+//                 //过期时间600s
+//                 expiresIn: 60
+//             });
+//         }
+
+//         res.status(200).json(token);
+//     });
+// })
+
+//云托管版
 app.post('/mircoApp/login', async (req, res) => {
-    
-    let { code: js_code, userInfo } = req.body;
-    let appid = 'wxf79b4bc85c8fca4b';
-    let secret = '60cff4738e73980e84ca69e49145f876';
 
-    console.log(js_code);
-    console.log(userInfo);
-
-    let result = await axios({
-        url: `https://api.weixin.qq.com/sns/jscode2session?appid=${appid}&secret=${secret}&js_code=${js_code}&grant_type=authorization_code`,
-        method: 'GET'
-    });
-
-    
-
-    let { session_key, openid } = result.data;
-    console.log('兑换openid', openid);
+    let openid = req.headers['x-wx-openid'];
 
     //注册用户
     userModel.find({ account: openid }, async (err, data) => {
