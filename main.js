@@ -993,19 +993,23 @@ app.post('/v1/bill', (req, res) => {
 //微信小程序接口
 //注册兼登陆
 app.post('/mircoApp/login', async (req, res) => {
-    console.log('接受到登陆请求');
+    
     let { code: js_code, userInfo } = req.body;
     let appid = 'wxf79b4bc85c8fca4b';
     let secret = '60cff4738e73980e84ca69e49145f876';
+
+    console.log(js_code);
+    console.log(userInfo);
 
     let result = await axios({
         url: `https://api.weixin.qq.com/sns/jscode2session?appid=${appid}&secret=${secret}&js_code=${js_code}&grant_type=authorization_code`,
         method: 'GET'
     });
 
-    console.log('兑换openid', result);
+    
 
     let { session_key, openid } = result.data;
+    console.log('兑换openid', openid);
 
     //注册用户
     userModel.find({ account: openid }, async (err, data) => {
